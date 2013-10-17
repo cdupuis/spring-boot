@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.zip.ZipFile;
 
 import javax.servlet.ServletContext;
 
@@ -41,6 +42,7 @@ import org.apache.catalina.loader.WebappLoader;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.startup.Tomcat.FixContextListener;
 import org.apache.coyote.AbstractProtocol;
+import org.apache.naming.resources.WARDirContext;
 import org.springframework.beans.BeanUtils;
 import org.springframework.boot.context.embedded.AbstractEmbeddedServletContainerFactory;
 import org.springframework.boot.context.embedded.EmbeddedServletContainer;
@@ -67,6 +69,7 @@ import org.springframework.util.StreamUtils;
  * 
  * @author Phillip Webb
  * @author Dave Syer
+ * @author Christian Dupuis
  * @see #setPort(int)
  * @see #setContextLifecycleListeners(Collection)
  * @see TomcatEmbeddedServletContainer
@@ -160,6 +163,15 @@ public class TomcatEmbeddedServletContainerFactory extends
 		if (isRegisterJspServlet()
 				&& ClassUtils.isPresent(getJspServletClassName(), getClass()
 						.getClassLoader())) {
+			
+			// JSP servlet class is on classpath and code location is a JAR file -> 
+			// we need to install custom Naming context to support JSPs out of JARs
+			docBase = getArchiveFileDocumentRoot(".jar");
+			if (docBase != null) {
+				context.setDocBase(getArchiveFileDocumentRoot(".jar").getAbsolutePath());
+				context.setResources(new TomcatEmbeddedJarDirContext());
+			}
+			
 			addJspServlet(context);
 			context.addLifecycleListener(new StoreMergedWebXmlListener());
 		}
@@ -526,5 +538,41 @@ public class TomcatEmbeddedServletContainerFactory extends
 		}
 
 	}
+	
+	/**
+	 * Extension of {@link WARDirContext} that doesn't check the passed <code>docBase</code> for a
+	 * <code>.war</code> file extension. 
+	 */
+	private static class TomcatEmbeddedJarDirContext extends WARDirContext {
 
+		@Override
+		public void setDocBase(String docBase) {
+
+			// Validate the format of the proposed document root
+			Assert.notNull(docBase, "docBase can't be null");
+
+			// Calculate a File object referencing this document base directory
+			File base = new File(docBase);
+
+			// Validate that the document base is an existing directory
+			Assert.isTrue(!base.exists() || !base.canRead() || base.isDirectory(), 
+					String.format("docBase '%s' points to invalid location. docBase needs to "
+							+ "exits, be readable and not a directory", docBase));
+			
+			try {
+				this.base = new ZipFile(base);
+			}
+			catch (Exception e) {
+				throw new IllegalArgumentException(String.format("docBase '%s' points to invalid zip file"
+						, docBase));
+			}
+
+			this.docBase = docBase;
+			
+			// Finally load all entries
+			loadEntries();
+		}
+		
+	}
+	
 }

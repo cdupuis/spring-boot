@@ -320,7 +320,7 @@ public abstract class AbstractEmbeddedServletContainerFactory implements
 		return file;
 	}
 
-	private File getExplodedWarFileDocumentRoot() {
+	protected final File getExplodedWarFileDocumentRoot() {
 		File file = getCodeSourceArchive();
 		if (this.logger.isDebugEnabled()) {
 			this.logger.debug("Code archive: " + file);
@@ -333,7 +333,7 @@ public abstract class AbstractEmbeddedServletContainerFactory implements
 		return null;
 	}
 
-	private File getArchiveFileDocumentRoot(String extension) {
+	protected final File getArchiveFileDocumentRoot(String extension) {
 		File file = getCodeSourceArchive();
 		if (this.logger.isDebugEnabled()) {
 			this.logger.debug("Code archive: " + file);
@@ -345,11 +345,11 @@ public abstract class AbstractEmbeddedServletContainerFactory implements
 		return null;
 	}
 
-	private File getWarFileDocumentRoot() {
+	protected final File getWarFileDocumentRoot() {
 		return getArchiveFileDocumentRoot(".war");
 	}
 
-	private File getCommonDocumentRoot() {
+	protected final File getCommonDocumentRoot() {
 		for (String commonDocRoot : COMMON_DOC_ROOTS) {
 			File root = new File(commonDocRoot);
 			if (root != null && root.exists() && root.isDirectory()) {
