@@ -5,6 +5,7 @@ welcome = { ->
   } catch (java.net.UnknownHostException ignore) {
     hostName = "localhost";
   }
+  def version = crash.context.attributes.get("spring.boot.version")
   return """\
   .   ____          _            __ _ _
  /\\\\ / ___'_ __ _ _(_)_ __  __ _ \\ \\ \\ \\
@@ -12,9 +13,7 @@ welcome = { ->
  \\\\/  ___)| |_)| | | | | || (_| |  ) ) ) )
   '  |____| .__|_| |_|_| |_\\__, | / / / /
  =========|_|==============|___/=/_/_/_/
-
-Welcome to $hostName + !
-It is ${new Date()} now
+ :: Spring Boot ::  (v$version) on $hostName
 """;
 }
 

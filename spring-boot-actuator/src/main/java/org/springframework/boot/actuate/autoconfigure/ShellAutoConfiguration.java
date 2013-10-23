@@ -20,17 +20,26 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 
 import org.crsh.auth.AuthenticationPlugin;
 import org.crsh.plugin.CRaSHPlugin;
+import org.crsh.plugin.PluginContext;
+import org.crsh.plugin.PluginDiscovery;
 import org.crsh.plugin.PluginLifeCycle;
-import org.crsh.spring.SpringBootstrap;
+import org.crsh.plugin.ServiceLoaderDiscovery;
 import org.crsh.vfs.FS;
 import org.crsh.vfs.spi.AbstractFSDriver;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.autoconfigure.ShellAutoConfiguration.ShellProperties;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -49,11 +58,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 
 /**
- * {@link EnableAutoConfiguration Auto-configuration} for embedded a extensible shell into an 
- * application.
+ * {@link EnableAutoConfiguration Auto-configuration} for embedded a extensible shell into an application.
  * 
  * TODO CD add documentation
- *  
+ * 
  * @author Christian Dupuis
  */
 @Configuration
@@ -66,16 +74,13 @@ public class ShellAutoConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean({ PluginLifeCycle.class })
-	public SpringBootstrap shellBootstrap() {
+	public PluginLifeCycle shellBootstrap() {
 		ResourceLoadingShellBootstrap bs = new ResourceLoadingShellBootstrap();
 
+		// TODO CD move configuration into ShellProperties
 		Properties props = new Properties();
-		if (properties.isEnableSsh()) {
-			props.put("crash.ssh.port", properties.getSshPort());
-		}
-		if (properties.isEnableTelnet()) {
-			props.put("crash.telnet.port", properties.getTelnetPort());
-		}
+		if (properties.isEnableSsh()) props.put("crash.ssh.port", properties.getSshPort());
+		if (properties.isEnableTelnet()) props.put("crash.telnet.port", properties.getTelnetPort());
 
 		props.put("crash.auth", "spring");
 		// props.put("crash.auth.simple.username", "admin");
@@ -100,32 +105,91 @@ public class ShellAutoConfiguration {
 		return new DelegatingAuthenticationPlugin();
 	}
 
-	private static class ResourceLoadingShellBootstrap extends SpringBootstrap {
+	private static class ResourceLoadingShellBootstrap extends PluginLifeCycle {
 
 		@Autowired
 		private ResourcePatternResolver resourceLoader;
 
-		@Override
-		protected FS createCommandFS() throws IOException, URISyntaxException {
+		@Autowired
+		private ListableBeanFactory beanFactory;
+
+		private FS createCommandFileSystem() throws IOException, URISyntaxException {
 			FS cmdFS = new FS();
-			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/commands/**", resourceLoader)));
+			// TODO CD add additional command paths based on user configuration
+			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/commands/**",
+					resourceLoader)));
 			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/crash/commands/**",
 					resourceLoader)));
 			return cmdFS;
 		}
 
-		@Override
-		protected FS createConfFS() throws IOException, URISyntaxException {
+		private FS createConfFileSystem() throws IOException, URISyntaxException {
 			FS cmdFS = new FS();
 			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/crash/*", resourceLoader)));
 			return cmdFS;
+		}
+
+		@PostConstruct
+		public void init() throws Exception {
+			
+			Map<String, Object> attributes = new HashMap<String, Object>();
+			
+			String bootVersion = ShellAutoConfiguration.class.getPackage().getImplementationVersion();
+			if (bootVersion != null) attributes.put("spring.boot.version", bootVersion);
+			
+			FS commandFileSystem = createCommandFileSystem();
+			FS confFileSystem = createConfFileSystem();
+			
+			PluginDiscovery discovery = new FilteringBeanFactoryPluginDiscovery(resourceLoader.getClassLoader(),
+					beanFactory);
+
+			PluginContext context = new PluginContext(discovery, attributes, commandFileSystem,
+					confFileSystem, resourceLoader.getClassLoader());
+
+			context.refresh();
+
+			start(context);
+		}
+
+		@PreDestroy
+		public void destroy() {
+			stop();
+		}
+
+	}
+
+	private static class FilteringBeanFactoryPluginDiscovery extends ServiceLoaderDiscovery {
+
+		private ListableBeanFactory beanFactory;
+
+		public FilteringBeanFactoryPluginDiscovery(ClassLoader classLoader, ListableBeanFactory beanFactory)
+				throws NullPointerException {
+			super(classLoader);
+			this.beanFactory = beanFactory;
+		}
+
+		@Override
+		public Iterable<CRaSHPlugin<?>> getPlugins() {
+			List<CRaSHPlugin<?>> plugins = new ArrayList<CRaSHPlugin<?>>();
+
+			// TODO CD add filtering of installed plugins based on configuration
+			for (CRaSHPlugin<?> p : super.getPlugins()) {
+				plugins.add(p);
+			}
+
+			Collection<CRaSHPlugin> springPlugins = beanFactory.getBeansOfType(CRaSHPlugin.class).values();
+			for (CRaSHPlugin p : springPlugins) {
+				plugins.add(p);
+			}
+
+			return plugins;
 		}
 	}
 
 	@SuppressWarnings("rawtypes")
 	private static class DelegatingAuthenticationPlugin extends CRaSHPlugin<AuthenticationPlugin> implements
 			AuthenticationPlugin<String> {
-		
+
 		@Autowired
 		private AuthenticationManager authenticationManager;
 
