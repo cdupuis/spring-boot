@@ -1,6 +1,5 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
 org.springframework.boot.actuate.autoconfigure.AuditAutoConfiguration,\
-org.springframework.boot.actuate.autoconfigure.CrashubAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.EndpointAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.EndpointWebMvcAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.ErrorMvcAutoConfiguration,\
@@ -8,5 +7,6 @@ org.springframework.boot.actuate.autoconfigure.ManagementServerPropertiesAutoCon
 org.springframework.boot.actuate.autoconfigure.MetricFilterAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.MetricRepositoryAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.SecurityAutoConfiguration,\
+org.springframework.boot.actuate.autoconfigure.ShellAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.TraceRepositoryAutoConfiguration,\
 org.springframework.boot.actuate.autoconfigure.TraceWebFilterAutoConfiguration

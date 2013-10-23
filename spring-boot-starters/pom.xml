@@ -18,7 +18,6 @@
 		<module>spring-boot-starter-amqp</module>
 		<module>spring-boot-starter-aop</module>
 		<module>spring-boot-starter-batch</module>
-		<module>spring-boot-starter-crashub</module>
 		<module>spring-boot-starter-data-jpa</module>
 		<module>spring-boot-starter-integration</module>
 		<module>spring-boot-starter-jdbc</module>
@@ -26,6 +25,7 @@
 		<module>spring-boot-starter-logging</module>
 		<module>spring-boot-starter-actuator</module>
 		<module>spring-boot-starter-parent</module>
+		<module>spring-boot-starter-shell</module>
 		<module>spring-boot-starter-security</module>
 		<module>spring-boot-starter-test</module>
 		<module>spring-boot-starter-tomcat</module>
