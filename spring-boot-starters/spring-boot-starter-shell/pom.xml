@@ -54,7 +54,7 @@
 			<artifactId>crash.shell</artifactId>
 			<exclusions>
 				<exclusion>
-					<groupId>org.codehaus</groupId>
+					<groupId>org.codehaus.groovy</groupId>
 					<artifactId>groovy-all</artifactId>
 				</exclusion>
 			</exclusions>
