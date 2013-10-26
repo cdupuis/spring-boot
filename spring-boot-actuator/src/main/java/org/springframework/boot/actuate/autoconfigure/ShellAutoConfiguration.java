@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,6 +37,7 @@ import org.crsh.plugin.CRaSHPlugin;
 import org.crsh.plugin.PluginContext;
 import org.crsh.plugin.PluginDiscovery;
 import org.crsh.plugin.PluginLifeCycle;
+import org.crsh.plugin.PropertyDescriptor;
 import org.crsh.plugin.ServiceLoaderDiscovery;
 import org.crsh.vfs.FS;
 import org.crsh.vfs.spi.AbstractFSDriver;
@@ -45,6 +47,7 @@ import org.springframework.boot.actuate.autoconfigure.ShellAutoConfiguration.She
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -52,10 +55,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.security.access.AccessDecisionManager;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.SecurityConfig;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 
 /**
  * {@link EnableAutoConfiguration Auto-configuration} for embedded a extensible shell into an application.
@@ -71,24 +79,42 @@ public class ShellAutoConfiguration {
 
 	@Autowired
 	private ShellProperties properties;
+	
+	@Bean
+	@ConditionalOnExpression("#{environment['shell.auth'] == 'jaas'}")
+	@ConditionalOnMissingBean({ AuthenticationProperties.class })
+	public AuthenticationProperties jaasAuthenticationProperties() {
+		return new JaasAuthenticationProperties();
+	}
+
+	@Bean
+	@ConditionalOnExpression("#{environment['shell.auth'] == 'key'}")
+	@ConditionalOnMissingBean({ AuthenticationProperties.class })
+	public AuthenticationProperties keyAuthenticationProperties() {
+		return new KeyAuthenticationProperties();
+	}
+
+	@Bean
+	@ConditionalOnExpression("#{environment['shell.auth'] == 'simple'}")
+	@ConditionalOnMissingBean({ AuthenticationProperties.class })
+	public AuthenticationProperties simpleAuthenticationProperties() {
+		return new SimpleAuthenticationProperties();
+	}
+
+	@Bean
+	@ConditionalOnExpression("#{environment['shell.auth'] == 'spring'}")
+	@ConditionalOnMissingBean({ AuthenticationProperties.class })
+	public AuthenticationProperties SpringAuthenticationProperties() {
+		return new SpringAuthenticationProperties();
+	}
 
 	@Bean
 	@ConditionalOnMissingBean({ PluginLifeCycle.class })
 	public PluginLifeCycle shellBootstrap() {
-		ResourceLoadingShellBootstrap bs = new ResourceLoadingShellBootstrap();
+		ShellBootstrap bs = new ShellBootstrap();
+		bs.setConfig(properties.mergeProperties(new Properties()));
 
-		// TODO CD move configuration into ShellProperties
-		Properties props = new Properties();
-		if (properties.isEnableSsh()) props.put("crash.ssh.port", properties.getSshPort());
-		if (properties.isEnableTelnet()) props.put("crash.telnet.port", properties.getTelnetPort());
-
-		props.put("crash.auth", "spring");
-		// props.put("crash.auth.simple.username", "admin");
-		// props.put("crash.auth.simple.password", "admin");
-
-		bs.setConfig(props);
-
-		// Make that configurable
+		// TODO CD Make that configurable
 		// Logger log = Logger.getLogger("org.crsh");
 		// log.setLevel(Level.WARNING);
 		//
@@ -102,49 +128,37 @@ public class ShellAutoConfiguration {
 	@ConditionalOnBean({ AuthenticationManager.class })
 	@SuppressWarnings("rawtypes")
 	public CRaSHPlugin<AuthenticationPlugin> shellAuthenticationManager() {
-		return new DelegatingAuthenticationPlugin();
+		return new AuthenticationManagerAdapter();
 	}
 
-	private static class ResourceLoadingShellBootstrap extends PluginLifeCycle {
-
+	private static class ShellBootstrap extends PluginLifeCycle {
+		
+		@Autowired
+		private ShellProperties properties;
+		
 		@Autowired
 		private ResourcePatternResolver resourceLoader;
 
 		@Autowired
 		private ListableBeanFactory beanFactory;
 
-		private FS createCommandFileSystem() throws IOException, URISyntaxException {
-			FS cmdFS = new FS();
-			// TODO CD add additional command paths based on user configuration
-			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/commands/**",
-					resourceLoader)));
-			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/crash/commands/**",
-					resourceLoader)));
-			return cmdFS;
-		}
-
-		private FS createConfFileSystem() throws IOException, URISyntaxException {
-			FS cmdFS = new FS();
-			cmdFS.mount(new ResourceLoadingFileSystemDriver(new DirectoryHandle("classpath*:/crash/*", resourceLoader)));
-			return cmdFS;
-		}
-
 		@PostConstruct
 		public void init() throws Exception {
-			
 			Map<String, Object> attributes = new HashMap<String, Object>();
-			
+
+			// TODO CD that shouldn't be here
 			String bootVersion = ShellAutoConfiguration.class.getPackage().getImplementationVersion();
-			if (bootVersion != null) attributes.put("spring.boot.version", bootVersion);
-			
-			FS commandFileSystem = createCommandFileSystem();
-			FS confFileSystem = createConfFileSystem();
-			
-			PluginDiscovery discovery = new FilteringBeanFactoryPluginDiscovery(resourceLoader.getClassLoader(),
+			if (bootVersion != null)
+				attributes.put("spring.boot.version", bootVersion);
+
+			FS commandFileSystem = createFileSystem(properties.getCommandPathPatterns());
+			FS confFileSystem = createFileSystem(properties.getConfigPathPatterns());
+
+			PluginDiscovery discovery = new BeanFactoryFilteringPluginDiscovery(resourceLoader.getClassLoader(),
 					beanFactory);
 
-			PluginContext context = new PluginContext(discovery, attributes, commandFileSystem,
-					confFileSystem, resourceLoader.getClassLoader());
+			PluginContext context = new PluginContext(discovery, attributes, commandFileSystem, confFileSystem,
+					resourceLoader.getClassLoader());
 
 			context.refresh();
 
@@ -156,13 +170,21 @@ public class ShellAutoConfiguration {
 			stop();
 		}
 
+		protected FS createFileSystem(String[] pathPatterns) throws IOException, URISyntaxException {
+			Assert.notNull(pathPatterns);
+			FS cmdFS = new FS();
+			for (String pathPattern : pathPatterns) {
+				cmdFS.mount(new SimpleFileSystemDriver(new DirectoryHandle(pathPattern, resourceLoader)));
+			}
+			return cmdFS;
+		}
 	}
 
-	private static class FilteringBeanFactoryPluginDiscovery extends ServiceLoaderDiscovery {
+	private static class BeanFactoryFilteringPluginDiscovery extends ServiceLoaderDiscovery {
 
 		private ListableBeanFactory beanFactory;
 
-		public FilteringBeanFactoryPluginDiscovery(ClassLoader classLoader, ListableBeanFactory beanFactory)
+		public BeanFactoryFilteringPluginDiscovery(ClassLoader classLoader, ListableBeanFactory beanFactory)
 				throws NullPointerException {
 			super(classLoader);
 			this.beanFactory = beanFactory;
@@ -185,14 +207,22 @@ public class ShellAutoConfiguration {
 			return plugins;
 		}
 	}
-
+	
 	@SuppressWarnings("rawtypes")
-	private static class DelegatingAuthenticationPlugin extends CRaSHPlugin<AuthenticationPlugin> implements
+	private static class AuthenticationManagerAdapter extends CRaSHPlugin<AuthenticationPlugin> implements
 			AuthenticationPlugin<String> {
-
+		
+		public static final PropertyDescriptor<String> ROLES = PropertyDescriptor.create(
+				"auth.spring.roles", "ADMIN", "Comma separated list of roles required to access the shell");
+		
+		private String[] roles = new String[] { "ADMIN" };
+		
 		@Autowired
 		private AuthenticationManager authenticationManager;
-
+		
+		@Autowired(required=false)
+		private AccessDecisionManager accessDecisionManager;
+		
 		@Override
 		public AuthenticationPlugin<String> getImplementation() {
 			return this;
@@ -206,22 +236,47 @@ public class ShellAutoConfiguration {
 		@Override
 		public boolean authenticate(String username, String password) throws Exception {
 			Authentication token = new UsernamePasswordAuthenticationToken(username, password);
-			try { token = authenticationManager.authenticate(token); }
-			catch (AuthenticationException ae) { /** TODO CD audit logging */ }
+			try {
+				token = authenticationManager.authenticate(token);
+			}
+			catch (AuthenticationException ae) {}
+
+			// TODO CD not sure the following works. add tests
+			if (accessDecisionManager != null && token.isAuthenticated() && roles != null && roles.length > 0) {
+				try {
+					accessDecisionManager.decide(token, this, SecurityConfig.createList(roles));
+				}
+				catch (AccessDeniedException e) {
+					return false;
+				}
+			}
 			return token.isAuthenticated();
+		}
+		
+		@Override
+		public void init() {
+			String rolesPropertyValue = getContext().getProperty(ROLES);
+			if (rolesPropertyValue != null) {
+				this.roles = StringUtils.commaDelimitedListToStringArray(rolesPropertyValue);
+			}
 		}
 
 		@Override
 		public Class<String> getCredentialType() {
 			return String.class;
 		}
+
+		@Override
+		protected Iterable<PropertyDescriptor<?>> createConfigurationCapabilities() {
+			return Arrays.<PropertyDescriptor<?>>asList(ROLES);
+		}
 	}
 
-	private static class ResourceLoadingFileSystemDriver extends AbstractFSDriver<ResourceHandle> {
+	private static class SimpleFileSystemDriver extends AbstractFSDriver<ResourceHandle> {
 
 		private ResourceHandle root;
 
-		public ResourceLoadingFileSystemDriver(ResourceHandle handle) {
+		public SimpleFileSystemDriver(ResourceHandle handle) {
 			this.root = handle;
 		}
 
@@ -315,44 +370,214 @@ public class ShellAutoConfiguration {
 	@ConfigurationProperties(name = "shell", ignoreUnknownFields = false)
 	public static class ShellProperties {
 
-		private boolean enableSsh = true;
+		@Autowired(required=false)
+		private AuthenticationProperties authenticationProperties;
+		
+		private Ssh ssh = new Ssh();
 
-		private boolean enableTelnet = true;;
+		private Telnet telnet = new Telnet();
 
-		private String sshPort = "2000";
+		private String[] commandPathPatterns = new String[] { "classpath*:/commands/**",
+			"classpath*:/crash/commands/**" };
 
-		private String telnetPort = "5000";
+		private String[] configPathPatterns = new String[] { "classpath*:/crash/*" };
 
-		public boolean isEnableSsh() {
-			return enableSsh;
+		private String auth = "simple";
+		
+
+		public void setSsh(Ssh ssh) {
+			this.ssh = ssh;
 		}
 
-		public void setEnableSsh(boolean enableSsh) {
-			this.enableSsh = enableSsh;
+		public void setTelnet(Telnet telnet) {
+			this.telnet = telnet;
 		}
 
-		public boolean isEnableTelnet() {
-			return enableTelnet;
+		public void setCommandPathPatterns(String[] commandPathPatterns) {
+			this.commandPathPatterns = commandPathPatterns;
 		}
 
-		public void setEnableTelnet(boolean enableTelnet) {
-			this.enableTelnet = enableTelnet;
+		public void setConfigPathPatterns(String[] configPathPatterns) {
+			this.configPathPatterns = configPathPatterns;
+		}
+		
+		public void setAuth(String auth) {
+			this.auth = auth;
+		}
+		
+		public Ssh getSsh() {
+			return ssh;
 		}
 
-		public String getSshPort() {
-			return sshPort;
+		public Telnet getTelnet() {
+			return telnet;
 		}
 
-		public void setSshPort(String sshPort) {
-			this.sshPort = sshPort;
+		public AuthenticationProperties getAuthenticationProperties() {
+			return authenticationProperties;
 		}
 
-		public String getTelnetPort() {
-			return telnetPort;
+		public void setAuthenticationProperties(AuthenticationProperties authenticationProperties) {
+			this.authenticationProperties = authenticationProperties;
 		}
 
-		public void setTelnetPort(String telnetPort) {
-			this.telnetPort = telnetPort;
+		public String[] getCommandPathPatterns() {
+			return commandPathPatterns;
+		}
+
+		public String[] getConfigPathPatterns() {
+			return configPathPatterns;
+		}
+
+		public String getAuth() {
+			return auth;
+		}
+
+		public Properties mergeProperties(Properties properties) {
+			if (ssh != null) {
+				properties = ssh.mergeProperties(properties);
+			}
+			if (telnet != null) {
+				properties = telnet.mergeProperties(properties);
+			}
+			
+			properties.put("crash.auth", auth);
+			if (authenticationProperties != null) {
+				properties = authenticationProperties.mergeProperties(properties);
+			}
+
+			return properties;
+		}
+
+		public static class Ssh implements PropertiesProvider {
+
+			private boolean enabled = true;
+
+			private String port = "2000";
+
+			private String keyPath = null;
+
+			public void setEnabled(boolean enabled) {
+				this.enabled = enabled;
+			}
+
+			public void setPort(String port) {
+				this.port = port;
+			}
+
+			public void setKeyPath(String keyPath) {
+				this.keyPath = keyPath;
+			}
+
+			@Override
+			public Properties mergeProperties(Properties properties) {
+				if (this.enabled) {
+					properties.put("crash.ssh.port", this.port);
+					if (this.keyPath != null) {
+						properties.put("crash.ssh.keypath", this.keyPath);
+					}
+				}
+				return properties;
+			}
+		}
+
+		public static class Telnet implements PropertiesProvider {
+
+			private boolean enabled = true;
+
+			private String port = "5000";
+
+			public void setEnabled(boolean enabled) {
+				this.enabled = enabled;
+			}
+
+			public void setPort(String port) {
+				this.port = port;
+			}
+
+			@Override
+			public Properties mergeProperties(Properties properties) {
+				if (this.enabled) properties.put("crash.telnet.port", this.port);
+				return properties;
+			}
+		}
+
+	}
+	
+	public interface PropertiesProvider {
+		Properties mergeProperties(Properties properties);
+	}
+	
+	public interface AuthenticationProperties extends PropertiesProvider {}
+	
+	@ConfigurationProperties(name = "shell.auth.jaas", ignoreUnknownFields = false)
+	public static class JaasAuthenticationProperties implements AuthenticationProperties {
+
+		private String domain = "my-domain";
+
+		public void setDomain(String domain) {
+			this.domain = domain;
+		}
+
+		@Override
+		public Properties mergeProperties(Properties properties) {
+			properties.put("crash.auth.jaas.domain", domain);
+			return properties;
+		}
+	}
+
+	@ConfigurationProperties(name = "shell.auth.spring", ignoreUnknownFields = false)
+	public static class SpringAuthenticationProperties implements AuthenticationProperties {
+
+		private String[] roles = new String[] { "ADMIN" };
+
+		public void setRoles(String[] roles) {
+			this.roles = roles;
+		}
+		
+		@Override
+		public Properties mergeProperties(Properties properties) {
+			properties.put("crash.auth.spring.roles", StringUtils.arrayToCommaDelimitedString(roles));
+			return properties;
+		}
+	}
+
+	@ConfigurationProperties(name = "shell.auth.simple", ignoreUnknownFields = false)
+	public static class SimpleAuthenticationProperties implements AuthenticationProperties {
+		
+		private String username;
+		
+		private String password;
+		
+		public void setUsername(String username) {
+			this.username = username;
+		}
+
+		public void setPassword(String password) {
+			this.password = password;
+		}
+		
+		@Override
+		public Properties mergeProperties(Properties properties) {
+			properties.put("crash.auth.simple.username", username);
+			properties.put("crash.auth.simple.password", password);
+			return properties;
+		}
+	}
+
+	@ConfigurationProperties(name = "shell.auth.key", ignoreUnknownFields = false)
+	public static class KeyAuthenticationProperties implements AuthenticationProperties {
+		
+		private String path;
+		
+		public void setPath(String path) {
+			this.path = path;
+		}
+		
+		@Override
+		public Properties mergeProperties(Properties properties) {
+			properties.put("crash.auth.key.path", path);
+			return properties;
 		}
 	}
 
