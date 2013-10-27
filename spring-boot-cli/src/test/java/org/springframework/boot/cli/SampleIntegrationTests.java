@@ -49,7 +49,6 @@ public class SampleIntegrationTests {
 	@BeforeClass
 	public static void cleanGrapes() throws Exception {
 		GrapesCleaner.cleanIfNecessary();
-		// System.setProperty("ivy.message.logger.level", "3");
 	}
 
 	@Rule
@@ -165,6 +164,9 @@ public class SampleIntegrationTests {
 
 	@Test
 	public void integrationSample() throws Exception {
+		// Depends on 1.0.0.M1 of spring-integration-dsl-groovy-core
+		System.clearProperty("disableSpringSnapshotRepos");
+
 		start("samples/integration.groovy");
 		String output = this.outputCapture.getOutputAndRelease();
 		assertTrue("Wrong output: " + output, output.contains("Hello, World"));
