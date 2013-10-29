@@ -16,6 +16,7 @@
 
 package org.springframework.boot.actuate.properties;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -41,8 +42,11 @@ public class CrshProperties {
 	protected static final String CRASH_SSH_KEYPATH = "crash.ssh.keypath";
 	protected static final String CRASH_SSH_PORT = "crash.ssh.port";
 	protected static final String CRASH_TELNET_PORT = "crash.telnet.port";
+	protected static final String CRASH_VFS_REFRESH_PERIOD = "crash.vfs.refresh_period";
 
 	private String auth = "simple";
+	
+	private String commandRefreshInterval = null;
 
 	@Autowired(required = false)
 	private AuthenticationProperties authenticationProperties;
@@ -60,31 +64,35 @@ public class CrshProperties {
 
 
 	public String getAuth() {
-		return auth;
+		return this.auth;
 	}
 
 	public AuthenticationProperties getAuthenticationProperties() {
-		return authenticationProperties;
+		return this.authenticationProperties;
 	}
-
+	
+	public String getCommandRefreshInterval() {
+		return this.commandRefreshInterval;
+	}
+	
 	public String[] getCommandPathPatterns() {
-		return commandPathPatterns;
+		return this.commandPathPatterns;
 	}
 
 	public String[] getConfigPathPatterns() {
-		return configPathPatterns;
+		return this.configPathPatterns;
 	}
 
 	public String[] getDisabledPlugins() {
-		return disabledPlugins;
+		return this.disabledPlugins;
 	}
 
 	public Ssh getSsh() {
-		return ssh;
+		return this.ssh;
 	}
 
 	public Telnet getTelnet() {
-		return telnet;
+		return this.telnet;
 	}
 
 	public Properties mergeProperties(Properties properties) {
@@ -100,16 +108,19 @@ public class CrshProperties {
 			properties = authenticationProperties.mergeProperties(properties);
 		}
 		
+		if (StringUtils.hasText(this.commandRefreshInterval)) {
+			properties.put(CRASH_VFS_REFRESH_PERIOD, this.commandRefreshInterval);
+		}
+		
 		// special handling for disabling Ssh and Telnet support
-		List<String> dp = Arrays.asList(disabledPlugins); 
+		List<String> dp = new ArrayList<String>(Arrays.asList(this.disabledPlugins)); 
 		if (!ssh.isEnabled()) {
 			dp.add("org.crsh.ssh.SSHPlugin");
 		}
 		if (!telnet.isEnabled()) {
 			dp.add("org.crsh.telnet.TelnetPlugin");
 		}
-		
-		disabledPlugins = dp.toArray(new String[dp.size()]);
+		this.disabledPlugins = dp.toArray(new String[dp.size()]);
 		
 		return properties;
 	}
@@ -120,6 +131,10 @@ public class CrshProperties {
 
 	public void setAuthenticationProperties(AuthenticationProperties authenticationProperties) {
 		this.authenticationProperties = authenticationProperties;
+	}
+	
+	public void setCommandRefreshInterval(String commandRefreshInterval) {
+		this.commandRefreshInterval = commandRefreshInterval;
 	}
 
 	public void setCommandPathPatterns(String[] commandPathPatterns) {

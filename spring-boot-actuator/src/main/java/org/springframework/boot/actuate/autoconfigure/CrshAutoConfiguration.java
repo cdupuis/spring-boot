@@ -344,6 +344,9 @@ public class CrshAutoConfiguration {
 
 		@Override
 		public long getLastModified(ResourceHandle handle) throws IOException {
+			if (handle instanceof FileHandle) {
+				return ((FileHandle) handle).getLastModified();
+			}
 			return -1;
 		}
 
@@ -411,6 +414,14 @@ public class CrshAutoConfiguration {
 		
 		public InputStream openStream() throws IOException {
 			return this.resource.getInputStream();
+		}
+		
+		public long getLastModified() {
+			try {
+				return this.resource.lastModified();
+			}
+			catch (IOException e) {}
+			return -1;
 		}
 		
 	}
