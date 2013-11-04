@@ -46,10 +46,10 @@ public class CrshProperties {
 
 	private String auth = "simple";
 	
-	private String commandRefreshInterval = null;
-
 	@Autowired(required = false)
 	private AuthenticationProperties authenticationProperties;
+
+	private String commandRefreshInterval = null;
 
 	private String[] commandPathPatterns = new String[] { "classpath*:/commands/**", 
 			"classpath*:/crash/commands/**" };
