@@ -74,9 +74,25 @@ import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
 /**
- * {@link EnableAutoConfiguration Auto-configuration} for embedded a extensible shell into an application.
+ * {@link EnableAutoConfiguration Auto-configuration} for embedding an extensible shell into a Spring
+ * Boot enabled application. By default a SSH daemon is started on port 2000 with a default username
+ * <code>user</code> and password (default password is logged during application startup).
  * 
- * TODO CD add documentation
+ * <p>
+ * This configuration will auto detect the existence of a Spring Security {@link AuthenticationManager}
+ * and will delegate authentication requests for shell access to this detected instance.
+ * 
+ * <p>
+ * To add customizations to the shell simply define beans of type {@link CRaSHPlugin} in the
+ * application context. Those beans will get auto detected during startup and registered with the
+ * underlying shell infrastructure.
+ * 
+ * <p>
+ * Additional shell commands can be implemented using the guide and documentation at 
+ * <a href="http://www.crashub.org">crashub.org</a>. By default Boot will search for commands using
+ * the following classpath scanning pattern <code>classpath*:/commands/**</code>. To add different
+ * locations or override the default use <code>shell.command_path_patterns</code> in your application
+ * configuration.
  * 
  * @author Christian Dupuis
  */

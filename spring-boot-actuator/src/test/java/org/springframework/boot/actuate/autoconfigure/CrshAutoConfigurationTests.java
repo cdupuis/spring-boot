@@ -38,6 +38,7 @@ import org.crsh.plugin.PluginLifeCycle;
 import org.crsh.plugin.ResourceKind;
 import org.crsh.processor.term.ProcessorIOHandler;
 import org.crsh.vfs.Resource;
+import org.junit.After;
 import org.junit.Test;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -64,6 +65,14 @@ import org.springframework.web.context.support.AnnotationConfigWebApplicationCon
 public class CrshAutoConfigurationTests {
 
 	private AnnotationConfigWebApplicationContext context;
+	
+	@After
+	public void tearDown() {
+		if (this.context != null) {
+			this.context.close();
+			this.context = null;
+		}
+	}
 
 	@Test
 	public void testDisabledPlugins() throws Exception {
@@ -152,7 +161,7 @@ public class CrshAutoConfigurationTests {
 	}
 
 	@Test
-	public void testAuthenticationProviderIsInstalled() {
+	public void testAuthenticationProvidersAreInstalled() {
 		this.context = new AnnotationConfigWebApplicationContext();
 		this.context.setServletContext(new MockServletContext());
 		this.context.register(SecurityConfiguration.class);
@@ -170,9 +179,85 @@ public class CrshAutoConfigurationTests {
 		}
 		assertEquals(3, count);
 	}
+	
+	@Test
+	public void testJaasAuthenticationProvider() {
+		MockEnvironment env = new MockEnvironment();
+		env.setProperty("shell.auth", "jaas");
+		env.setProperty("shell.auth.jaas.domain", "my-test-domain");
+		this.context = new AnnotationConfigWebApplicationContext();
+		this.context.setEnvironment(env);
+		this.context.setServletContext(new MockServletContext());
+		this.context.register(SecurityConfiguration.class);
+		this.context.register(CrshAutoConfiguration.class);
+		this.context.refresh();
+		
+		PluginLifeCycle lifeCycle = this.context.getBean(PluginLifeCycle.class);
+		assertEquals(lifeCycle.getConfig().get("crash.auth"), "jaas");
+		assertEquals(lifeCycle.getConfig().get("crash.auth.jaas.domain"), "my-test-domain");
+	}
 
 	@Test
-	public void testSuccessfulAuthentication() {
+	public void testKeyAuthenticationProvider() {
+		MockEnvironment env = new MockEnvironment();
+		env.setProperty("shell.auth", "key");
+		env.setProperty("shell.auth.key.path", "~/test.pem");
+		this.context = new AnnotationConfigWebApplicationContext();
+		this.context.setEnvironment(env);
+		this.context.setServletContext(new MockServletContext());
+		this.context.register(SecurityConfiguration.class);
+		this.context.register(CrshAutoConfiguration.class);
+		this.context.refresh();
+		
+		PluginLifeCycle lifeCycle = this.context.getBean(PluginLifeCycle.class);
+		assertEquals(lifeCycle.getConfig().get("crash.auth"), "key");
+		assertEquals(lifeCycle.getConfig().get("crash.auth.key.path"), "~/test.pem");
+	}
+
+	@Test
+	public void testSimpleAuthenticationProvider() {
+		MockEnvironment env = new MockEnvironment();
+		env.setProperty("shell.auth", "simple");
+		env.setProperty("shell.auth.simple.username", "user");
+		env.setProperty("shell.auth.simple.password", "password");
+		this.context = new AnnotationConfigWebApplicationContext();
+		this.context.setEnvironment(env);
+		this.context.setServletContext(new MockServletContext());
+		this.context.register(SecurityConfiguration.class);
+		this.context.register(CrshAutoConfiguration.class);
+		this.context.refresh();
+		
+		PluginLifeCycle lifeCycle = this.context.getBean(PluginLifeCycle.class);
+		assertEquals(lifeCycle.getConfig().get("crash.auth"), "simple");
+		
+		AuthenticationPlugin<String> authenticationPlugin = null;
+		String authentication = lifeCycle.getConfig().getProperty("crash.auth");
+		assertNotNull(authentication);
+		for (AuthenticationPlugin plugin : lifeCycle.getContext().getPlugins(AuthenticationPlugin.class)) {
+			if (authentication.equals(plugin.getName())) {
+				authenticationPlugin = plugin;
+				break;
+			}
+		}
+		assertNotNull(authenticationPlugin);
+		try {
+			assertTrue(authenticationPlugin.authenticate("user", "password"));
+		}
+		catch (Exception e) {
+			fail();
+		}
+		
+		try {
+			assertFalse(authenticationPlugin.authenticate(UUID.randomUUID().toString(),
+					"password"));
+		}
+		catch (Exception e) {
+			fail();
+		}
+	}
+
+	@Test
+	public void testSpringAuthenticationProvider() {
 		MockEnvironment env = new MockEnvironment();
 		env.setProperty("shell.auth", "spring");
 		this.context = new AnnotationConfigWebApplicationContext();
@@ -201,31 +286,7 @@ public class CrshAutoConfigurationTests {
 		catch (Exception e) {
 			fail();
 		}
-	}
-
-	@Test
-	public void testUnsuccessfulAuthentication() {
-		MockEnvironment env = new MockEnvironment();
-		env.setProperty("shell.auth", "spring");
-		this.context = new AnnotationConfigWebApplicationContext();
-		this.context.setEnvironment(env);
-		this.context.setServletContext(new MockServletContext());
-		this.context.register(SecurityConfiguration.class);
-		this.context.register(CrshAutoConfiguration.class);
-		this.context.refresh();
-
-		PluginLifeCycle lifeCycle = this.context.getBean(PluginLifeCycle.class);
-
-		AuthenticationPlugin<String> authenticationPlugin = null;
-		String authentication = lifeCycle.getConfig().getProperty("crash.auth");
-		assertNotNull(authentication);
-		for (AuthenticationPlugin plugin : lifeCycle.getContext().getPlugins(AuthenticationPlugin.class)) {
-			if (authentication.equals(plugin.getName())) {
-				authenticationPlugin = plugin;
-				break;
-			}
-		}
-		assertNotNull(authenticationPlugin);
+		
 		try {
 			assertFalse(authenticationPlugin.authenticate(UUID.randomUUID().toString(),
 					SecurityConfiguration.PASSWORD));
