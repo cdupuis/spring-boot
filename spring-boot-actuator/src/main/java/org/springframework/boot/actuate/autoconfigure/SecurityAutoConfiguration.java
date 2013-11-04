@@ -22,6 +22,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import javax.servlet.Filter;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +48,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.DefaultAuthenticationEventPublisher;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.annotation.SecurityConfigurer;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.authentication.configurers.provisioning.InMemoryUserDetailsManagerConfigurer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -57,7 +60,7 @@ import org.springframework.security.config.annotation.web.configurers.HeadersCon
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
 import org.springframework.security.web.header.writers.HstsHeaderWriter;
-import org.springframework.security.web.util.AnyRequestMatcher;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 
 /**
  * {@link EnableAutoConfiguration Auto-configuration} for security of a web application or
@@ -93,10 +96,11 @@ import org.springframework.security.web.util.AnyRequestMatcher;
  */
 @Configuration
 @ConditionalOnClass({ EnableWebSecurity.class })
-@EnableWebSecurity
-// (debug = true)
+@ConditionalOnMissingBean(annotation = EnableWebSecurity.class)
 @EnableConfigurationProperties
 public class SecurityAutoConfiguration {
+
+	private static final String[] NO_PATHS = new String[0];
 
 	@Bean(name = "org.springframework.actuate.properties.SecurityProperties")
 	@ConditionalOnMissingBean
@@ -119,8 +123,60 @@ public class SecurityAutoConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean({ ManagementWebSecurityConfigurerAdapter.class })
+	@ConditionalOnExpression("${security.management.enabled:true}")
 	public WebSecurityConfigurerAdapter managementWebSecurityConfigurerAdapter() {
 		return new ManagementWebSecurityConfigurerAdapter();
+	}
+
+	@Bean
+	@ConditionalOnMissingBean({ IgnoredPathsWebSecurityConfigurerAdapter.class })
+	public SecurityConfigurer<Filter, WebSecurity> ignoredPathsWebSecurityConfigurerAdapter() {
+		return new IgnoredPathsWebSecurityConfigurerAdapter();
+	}
+
+	// Get the ignored paths in early
+	@Order(Ordered.HIGHEST_PRECEDENCE)
+	@EnableWebSecurity
+	private static class IgnoredPathsWebSecurityConfigurerAdapter implements
+			SecurityConfigurer<Filter, WebSecurity> {
+
+		private static List<String> DEFAULT_IGNORED = Arrays.asList("/css/**", "/js/**",
+				"/images/**", "/**/favicon.ico");
+
+		@Autowired(required = false)
+		private ErrorController errorController;
+
+		@Autowired(required = false)
+		private EndpointHandlerMapping endpointHandlerMapping;
+
+		@Autowired
+		private SecurityProperties security;
+
+		@Override
+		public void configure(WebSecurity builder) throws Exception {
+		}
+
+		@Override
+		public void init(WebSecurity builder) throws Exception {
+			IgnoredRequestConfigurer ignoring = builder.ignoring();
+			ignoring.antMatchers(getEndpointPaths(this.endpointHandlerMapping, false));
+			List<String> ignored = new ArrayList<String>(this.security.getIgnored());
+			if (!this.security.getManagement().isEnabled()) {
+				ignored.addAll(Arrays.asList(getEndpointPaths(
+						this.endpointHandlerMapping, true)));
+			}
+			if (ignored.isEmpty()) {
+				ignored.addAll(DEFAULT_IGNORED);
+			}
+			else if (ignored.contains("none")) {
+				ignored.remove("none");
+			}
+			if (this.errorController != null) {
+				ignored.add(this.errorController.getErrorPath());
+			}
+			ignoring.antMatchers(ignored.toArray(new String[0]));
+		}
+
 	}
 
 	// Give user-supplied filters a chance to be last in line
@@ -128,17 +184,11 @@ public class SecurityAutoConfiguration {
 	private static class ApplicationWebSecurityConfigurerAdapter extends
 			WebSecurityConfigurerAdapter {
 
-		private static List<String> DEFAULT_IGNORED = Arrays.asList("/css/**", "/js/**",
-				"/images/**", "/**/favicon.ico");
-
 		@Autowired
 		private SecurityProperties security;
 
 		@Autowired
 		private AuthenticationEventPublisher authenticationEventPublisher;
-
-		@Autowired(required = false)
-		private ErrorController errorController;
 
 		@Override
 		protected void configure(HttpSecurity http) throws Exception {
@@ -188,22 +238,6 @@ public class SecurityAutoConfiguration {
 		}
 
 		@Override
-		public void configure(WebSecurity builder) throws Exception {
-			IgnoredRequestConfigurer ignoring = builder.ignoring();
-			List<String> ignored = new ArrayList<String>(this.security.getIgnored());
-			if (ignored.isEmpty()) {
-				ignored.addAll(DEFAULT_IGNORED);
-			}
-			else if (ignored.contains("none")) {
-				ignored.remove("none");
-			}
-			if (this.errorController != null) {
-				ignored.add(this.errorController.getErrorPath());
-			}
-			ignoring.antMatchers(ignored.toArray(new String[0]));
-		}
-
-		@Override
 		protected AuthenticationManager authenticationManager() throws Exception {
 			AuthenticationManager manager = super.authenticationManager();
 			if (manager instanceof ProviderManager) {
@@ -220,8 +254,6 @@ public class SecurityAutoConfiguration {
 	private static class ManagementWebSecurityConfigurerAdapter extends
 			WebSecurityConfigurerAdapter {
 
-		private static final String[] NO_PATHS = new String[0];
-
 		@Autowired
 		private SecurityProperties security;
 
@@ -234,7 +266,8 @@ public class SecurityAutoConfiguration {
 		@Override
 		protected void configure(HttpSecurity http) throws Exception {
 
-			String[] paths = getEndpointPaths(true); // secure endpoints
+			// secure endpoints
+			String[] paths = getEndpointPaths(this.endpointHandlerMapping, true);
 			if (paths.length > 0 && this.security.getManagement().isEnabled()) {
 				// Always protect them if present
 				if (this.security.isRequireSsl()) {
@@ -259,31 +292,10 @@ public class SecurityAutoConfiguration {
 
 		}
 
-		@Override
-		public void configure(WebSecurity builder) throws Exception {
-			IgnoredRequestConfigurer ignoring = builder.ignoring();
-			ignoring.antMatchers(getEndpointPaths(false));
-		}
-
 		private AuthenticationEntryPoint entryPoint() {
 			BasicAuthenticationEntryPoint entryPoint = new BasicAuthenticationEntryPoint();
 			entryPoint.setRealmName(this.security.getBasic().getRealm());
 			return entryPoint;
-		}
-
-		private String[] getEndpointPaths(boolean secure) {
-			if (this.endpointHandlerMapping == null) {
-				return NO_PATHS;
-			}
-
-			List<Endpoint<?>> endpoints = this.endpointHandlerMapping.getEndpoints();
-			List<String> paths = new ArrayList<String>(endpoints.size());
-			for (Endpoint<?> endpoint : endpoints) {
-				if (endpoint.isSensitive() == secure) {
-					paths.add(endpoint.getPath());
-				}
-			}
-			return paths.toArray(new String[paths.size()]);
 		}
 
 	}
@@ -299,10 +311,11 @@ public class SecurityAutoConfiguration {
 		private SecurityProperties security;
 
 		@Bean
-		public AuthenticationManager authenticationManager() throws Exception {
+		public AuthenticationManager authenticationManager(
+				ObjectPostProcessor<Object> objectPostProcessor) throws Exception {
 
 			InMemoryUserDetailsManagerConfigurer<AuthenticationManagerBuilder> builder = new AuthenticationManagerBuilder(
-					ObjectPostProcessor.QUIESCENT_POSTPROCESSOR).inMemoryAuthentication();
+					objectPostProcessor).inMemoryAuthentication();
 			User user = this.security.getUser();
 
 			if (user.isDefaultPassword()) {
@@ -322,12 +335,28 @@ public class SecurityAutoConfiguration {
 
 	}
 
+	private static String[] getEndpointPaths(
+			EndpointHandlerMapping endpointHandlerMapping, boolean secure) {
+		if (endpointHandlerMapping == null) {
+			return NO_PATHS;
+		}
+
+		List<Endpoint<?>> endpoints = endpointHandlerMapping.getEndpoints();
+		List<String> paths = new ArrayList<String>(endpoints.size());
+		for (Endpoint<?> endpoint : endpoints) {
+			if (endpoint.isSensitive() == secure) {
+				paths.add(endpoint.getPath());
+			}
+		}
+		return paths.toArray(new String[paths.size()]);
+	}
+
 	private static void configureHeaders(HeadersConfigurer<?> configurer,
 			SecurityProperties.Headers headers) throws Exception {
 		if (headers.getHsts() != Headers.HSTS.none) {
 			boolean includeSubdomains = headers.getHsts() == Headers.HSTS.all;
 			HstsHeaderWriter writer = new HstsHeaderWriter(includeSubdomains);
-			writer.setRequestMatcher(new AnyRequestMatcher());
+			writer.setRequestMatcher(AnyRequestMatcher.INSTANCE);
 			configurer.addHeaderWriter(writer);
 		}
 		if (headers.isContentType()) {
