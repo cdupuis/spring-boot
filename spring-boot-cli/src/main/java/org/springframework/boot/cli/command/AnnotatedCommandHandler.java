@@ -64,7 +64,7 @@ public class AnnotatedCommandHandler extends OptionParsingCommand {
 
 		private Object command;
 
-		private Method runMethod;
+		private Method commandMethod;
 
 		private List<MethodParameter> parameters;
 
@@ -76,17 +76,15 @@ public class AnnotatedCommandHandler extends OptionParsingCommand {
 		protected void options() {
 			synchronized (this) {
 				if (this.parameters == null) {
-					extractParameters();
+					extractCommandMethod();
 				}
 			}
 
 			for (MethodParameter parameter : this.parameters) {
 				CliParameter parameterAnnotation = parameter
 						.getParameterAnnotation(CliParameter.class);
-				if (parameterAnnotation != null) {
-					option(parameterAnnotation.name(), parameterAnnotation.description())
-							.withOptionalArg();
-				}
+				option(parameterAnnotation.name(), parameterAnnotation.description())
+						.withOptionalArg();
 			}
 		}
 
@@ -94,31 +92,40 @@ public class AnnotatedCommandHandler extends OptionParsingCommand {
 		protected void run(OptionSet options) throws Exception {
 			synchronized (this) {
 				if (this.parameters == null) {
-					extractParameters();
+					extractCommandMethod();
 				}
 			}
 
 			List<Object> parameters = prepareParameters(options);
-			ReflectionUtils.invokeMethod(this.runMethod, this.command,
+			ReflectionUtils.invokeMethod(this.commandMethod, this.command,
 					parameters.toArray(new Object[parameters.size()]));
 		}
 
-		protected void extractParameters() {
+		protected void extractCommandMethod() {
 			Assert.notNull(this.command, "Command must not be null");
 			Method[] methods = this.command.getClass().getDeclaredMethods();
+
+			// TODO what if we find more then one method? => raise error
 			for (Method method : methods) {
+
+				// TODO no hard requirement to have this method be called run. better
+				// use another annotation?
 				if ("run".equals(method.getName())) {
-					this.runMethod = method;
+					this.commandMethod = method;
 					this.parameters = new ArrayList<MethodParameter>();
 
-					int parameterCount = this.runMethod.getParameterTypes().length;
-					for (int i = 0; i < parameterCount; i++) {
-						MethodParameter parameter = new MethodParameter(this.runMethod, i);
-						validateMethodParameter(method, parameter);
-						this.parameters.add(parameter);
-					}
+					extractParameters(method);
 					break;
 				}
+			}
+		}
+
+		protected void extractParameters(Method method) {
+			int parameterCount = this.commandMethod.getParameterTypes().length;
+			for (int i = 0; i < parameterCount; i++) {
+				MethodParameter parameter = new MethodParameter(this.commandMethod, i);
+				validateMethodParameter(method, parameter);
+				this.parameters.add(parameter);
 			}
 		}
 
