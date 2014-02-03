@@ -53,7 +53,7 @@ public class AnnotatedCommandHandler extends OptionParsingCommand {
 	public static AnnotatedCommandHandler forObject(Object command) {
 		CliCommand cliCommand = AnnotationUtils.findAnnotation(command.getClass(),
 				CliCommand.class);
-		Assert.notNull(cliCommand, "Command object must have @CliCommand annoatation");
+		Assert.notNull(cliCommand, "Command object must have @CliCommand annotation");
 		return new AnnotatedCommandHandler(cliCommand.name(), cliCommand.description(),
 				command);
 	}
@@ -127,7 +127,7 @@ public class AnnotatedCommandHandler extends OptionParsingCommand {
 					.getParameterAnnotation(CliParameter.class);
 			Assert.notNull(
 					parameterAnnotation,
-					"@Parameter annotation missing on parameter '"
+					"@CliParameter annotation missing on parameter '"
 							+ parameter.getParameterName() + "' on method " + method);
 		}
 
