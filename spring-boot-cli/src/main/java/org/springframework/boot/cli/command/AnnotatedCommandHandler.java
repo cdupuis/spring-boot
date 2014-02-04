@@ -22,6 +22,7 @@ import java.util.List;
 
 import joptsimple.OptionSet;
 
+import org.springframework.boot.cli.command.options.OptionHandler;
 import org.springframework.core.MethodParameter;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.convert.ConversionService;
