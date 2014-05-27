@@ -33,9 +33,9 @@ public class SolrHealthIndicator extends AbstractHealthIndicator {
 	}
 
 	@Override
-	protected Health doHealthCheck() throws Exception {
+	protected void doHealthCheck(Health.Builder builder) throws Exception {
 		Object status = this.solrServer.ping().getResponse().get("status");
-		return Health.up().withDetail("solrStatus", status);
+		builder.up().withDetail("solrStatus", status);
 	}
 
 }
