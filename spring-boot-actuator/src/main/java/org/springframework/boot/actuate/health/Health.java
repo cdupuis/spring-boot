@@ -33,16 +33,16 @@ import com.fasterxml.jackson.annotation.JsonUnwrapped;
  * {@link Health} contains a {@link Status} to express the state of a component or
  * subsystem and some additional details to carry some contextual information.
  * <p>
- * {@link Health} has a fluent API to make it easy to construct instances. Typical usage
- * in a {@link HealthIndicator} would be:
+ * {@link Health} instances can be created by using {@link Builder}'s fluent API. Typical
+ * usage in a {@link HealthIndicator} would be:
  * 
  * <pre class="code">
  * try {
  * 	// do some test to determine state of component
- * 	return new Health.Builder().up().withDetail(&quot;version&quot;, &quot;1.1.2&quot;);
+ * 	return new Health.Builder().up().withDetail(&quot;version&quot;, &quot;1.1.2&quot;).build();
  * }
  * catch (Exception ex) {
- * 	return Health.down(ex);
+ * 	return new Health.Builder().down(ex).build();
  * }
  * </pre>
  * 
@@ -106,6 +106,67 @@ public final class Health {
 		return getStatus() + " " + getDetails();
 	}
 
+	/**
+	 * Create a new {@link Builder} instance with an {@link Status#UNKNOWN} status.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder unknown() {
+		return status(Status.UNKNOWN);
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with an {@link Status#UP} status.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder up() {
+		return status(Status.UP);
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with an {@link Status#DOWN} status an the
+	 * specified exception details.
+	 * @param ex the exception
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder down(Exception ex) {
+		return down().withException(ex);
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with a {@link Status#DOWN} status.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder down() {
+		return status(Status.DOWN);
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with an {@link Status#OUT_OF_SERVICE} status.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder outOfService() {
+		return status(Status.OUT_OF_SERVICE);
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with a specific status code.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder status(String statusCode) {
+		return status(new Status(statusCode));
+	}
+
+	/**
+	 * Create a new {@link Builder} instance with a specific {@link Status}.
+	 * @return a new {@link Builder} instance
+	 */
+	public static Builder status(Status status) {
+		return new Builder(status);
+	}
+
+	/**
+	 * Builder for creating immutable {@link Health} instances.
+	 */
 	public static class Builder {
 
 		private Status status;

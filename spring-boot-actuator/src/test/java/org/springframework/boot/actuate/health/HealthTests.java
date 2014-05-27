@@ -45,7 +45,7 @@ public class HealthTests {
 
 	@Test
 	public void createWithStatus() throws Exception {
-		Health health = new Health.Builder(Status.UP).build();
+		Health health = Health.status(Status.UP).build();
 		assertThat(health.getStatus(), equalTo(Status.UP));
 		assertThat(health.getDetails().size(), equalTo(0));
 	}
@@ -122,7 +122,7 @@ public class HealthTests {
 	@Test
 	public void downWithException() throws Exception {
 		RuntimeException ex = new RuntimeException("bang");
-		Health health = new Health.Builder().down(ex).build();
+		Health health = Health.down(ex).build();
 		assertThat(health.getStatus(), equalTo(Status.DOWN));
 		assertThat(health.getDetails().get("error"),
 				equalTo((Object) "java.lang.RuntimeException: bang"));
@@ -130,28 +130,28 @@ public class HealthTests {
 
 	@Test
 	public void down() throws Exception {
-		Health health = new Health.Builder().down().build();
+		Health health = Health.down().build();
 		assertThat(health.getStatus(), equalTo(Status.DOWN));
 		assertThat(health.getDetails().size(), equalTo(0));
 	}
 
 	@Test
 	public void outOfService() throws Exception {
-		Health health = new Health.Builder().outOfService().build();
+		Health health = Health.outOfService().build();
 		assertThat(health.getStatus(), equalTo(Status.OUT_OF_SERVICE));
 		assertThat(health.getDetails().size(), equalTo(0));
 	}
 
 	@Test
 	public void statusCode() throws Exception {
-		Health health = new Health.Builder().status("UP").build();
+		Health health = Health.status("UP").build();
 		assertThat(health.getStatus(), equalTo(Status.UP));
 		assertThat(health.getDetails().size(), equalTo(0));
 	}
 
 	@Test
 	public void status() throws Exception {
-		Health health = new Health.Builder().status(Status.UP).build();
+		Health health = Health.status(Status.UP).build();
 		assertThat(health.getStatus(), equalTo(Status.UP));
 		assertThat(health.getDetails().size(), equalTo(0));
 	}
